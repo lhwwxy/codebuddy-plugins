@@ -13,11 +13,15 @@ if [ -z "$OUT" ]; then echo "stdout 为空 ✓"; else echo "⚠ stdout 非空: $
 if [ -f "$AGENTIC_ROUTER_HOME/catalog.json" ]; then echo "catalog.json 生成 ✓"; else echo "✗ catalog 缺失"; exit 1; fi
 
 echo "=== 2. UserPromptSubmit（复杂代码任务 → 应注入推荐方案，且护栏生效不推荐全 lite）==="
-OUT=$(run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SID\",\"cwd\":\"$(pwd)\",\"prompt\":\"重构下面这段 Python 代码，使其支持多线程并发执行并安全处理异常：\\n\\n\`\`\`python\\nimport time\\ndef fetch(url):\\n    time.sleep(1)\\n\`\`\`\"}")
+OUT=$(run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SID\",\"cwd\":\"$(pwd)\",\"agent_type\":\"cli\",\"prompt\":\"重构下面这段 Python 代码，使其支持多线程并发执行并安全处理异常：\\n\\n\`\`\`python\\nimport time\\ndef fetch(url):\\n    time.sleep(1)\\n\`\`\`\"}")
 echo "$OUT" | head -5
 if echo "$OUT" | grep -q "agentic-router 推荐方案"; then echo "注入推荐 ✓"; else echo "✗ 未注入"; exit 1; fi
+if echo "$OUT" | grep -q "router-lite"; then echo "CLI 文案含子代理分发 ✓"; else echo "✗ CLI 文案应含 router-lite"; exit 1; fi
 if ! echo "$OUT" | grep -q "各步骤均分发 router-lite"; then echo "高复杂度护栏 ✓（未推荐全 lite）"; else echo "✗ 高复杂度任务不应全 lite"; exit 1; fi
 if [ -f "$AGENTIC_ROUTER_HOME/decisions.jsonl" ]; then echo "decisions.jsonl 落盘 ✓"; else echo "✗ decisions 缺失"; exit 1; fi
+OUT2=$(run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"ide-s1\",\"cwd\":\"$(pwd)\",\"agent_type\":\"ide\",\"prompt\":\"帮我重构这段代码并优化性能，需要仔细分析调用链路\"}")
+if echo "$OUT2" | grep -q "建议用户切换"; then echo "IDE 文案自适应 ✓"; else echo "✗ IDE 文案应为手动切模型建议"; exit 1; fi
+run "{\"hook_event_name\":\"Stop\",\"session_id\":\"ide-s1\",\"stop_hook_active\":false}" > /dev/null
 
 echo "=== 3. UserPromptSubmit（极简闲聊 → 只记录不注入）==="
 OUT=$(run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$SID\",\"cwd\":\"$(pwd)\",\"prompt\":\"你好\"}")

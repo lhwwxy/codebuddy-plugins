@@ -177,6 +177,9 @@ function onUserPromptSubmit(input) {
 
   // 记录 open turn（供 PostToolUse/Stop 归属）
   const s = loadTurns(sid)
+  // 去重：同一 prompt 极短时间内的重复触发（插件 hooks 与 settings hooks 双注册、
+  // 或 hook 重复配置）只处理一次——防止 seq 跳号与重复决策
+  if (s.open && Date.now() - s.open.t0 < 1500 && s.open.promptPreview === text.slice(0, 100)) return
   // 补结算：上回合 Stop 丢失（agent 异常等）时不丢奖励——新回合开始意味着上回合已结束
   if (s.open) {
     const missed = s.open
@@ -194,6 +197,7 @@ function onUserPromptSubmit(input) {
   store.appendJsonl('decisions.jsonl', {
     ts: Date.now(), sessionId: sid, turn: s.seq, taskType: cls.type,
     complexity: cls.complexity, tier, banditTier, metaChosen: meta.chosen,
+    agent: input.agent_type || (process.env.CODEBUDDY_PLUGIN_ROOT ? 'cli' : 'settings-hook'),
     recs: {
       rule: recs.rule.tier, ucb: recs.ucb.tier, lin: recs.lin.tier, knn: String(recs.knn.tier),
     },
@@ -203,21 +207,33 @@ function onUserPromptSubmit(input) {
   // 极简闲聊不打扰：只记录不注入（降低上下文噪音）
   const trivial = cls.complexity < 0.2 && cls.type !== 'code' && cls.type !== 'agentic'
   if (trivial) return
-  process.stdout.write(buildAdvice(cls, tier))
+  process.stdout.write(buildAdvice(cls, tier, input.agent_type))
 }
 
-// 推荐方案文本（模型可见；引导主 agent 展示给用户确认后按档位分发子代理）
-function buildAdvice(cls, tier) {
-  const plan = tier === 'fast'
-    ? '各步骤均分发 router-lite 子代理（lite 模型，低成本低延迟）'
-    : tier === 'strong'
-      ? '重型步骤（编写/修改代码、运行与验证）分发 router-strong 子代理（reasoning 模型）；轻量步骤（检索/阅读/总结）分发 router-lite'
-      : '重型步骤分发 router-strong，其余分发 router-lite；若执行中发现任务整体简单，可全部降为 router-lite'
+// 推荐方案文本（模型可见）。按运行环境适配：
+//   CLI（插件 hooks，agent_type=cli 或设置了 CODEBUDDY_PLUGIN_ROOT）→ 有 router-lite/strong 子代理可分发
+//   IDE 聊天（settings 全局 hooks）→ 无插件子代理，转为档位建议由用户手动切模型
+function buildAdvice(cls, tier, agentType) {
+  const isCli = agentType ? agentType === 'cli' : Boolean(process.env.CODEBUDDY_PLUGIN_ROOT)
+  const plan = isCli
+    ? (tier === 'fast'
+        ? '各步骤均分发 router-lite 子代理（lite 模型，低成本低延迟）'
+        : tier === 'strong'
+          ? '重型步骤（编写/修改代码、运行与验证）分发 router-strong 子代理（reasoning 模型）；轻量步骤（检索/阅读/总结）分发 router-lite'
+          : '重型步骤分发 router-strong，其余分发 router-lite；若执行中发现任务整体简单，可全部降为 router-lite')
+    : (tier === 'fast'
+        ? '适合轻量档：建议用户切换到 lite 模型（IDE 模型选择器），或直接以轻量方式完成'
+        : tier === 'strong'
+          ? '适合强力档：建议用户切换到 reasoning 模型后继续；若当前已是强模型则直接执行'
+          : '适合混合档：重型步骤建议 reasoning、其余 lite，由用户按需切换模型')
+  const action = isCli
+    ? '请用一句话把该方案告知用户；用户认可（或未明确反对）后，用 task 工具把对应步骤分发到上述子代理执行。'
+    : '请用一句话把该建议告知用户；用户认可后以对应档位完成（模型切换由用户操作，未切换时直接高效执行）。'
   return [
     '<agentic-router 推荐方案（路由插件自动评估，非用户输入）>',
     '任务评估: 类型=' + cls.type + '，复杂度=' + cls.complexity + ' → 建议档位: ' + tier,
     '执行建议: ' + plan,
-    '请用一句话把该方案告知用户；用户认可（或未明确反对）后，用 task 工具把对应步骤分发到上述子代理执行。用户另行指定模型/方式时，以用户为准。',
+    action + '用户另行指定模型/方式时，以用户为准。',
     '</agentic-router>',
   ].join('\n') + '\n'
 }
@@ -227,6 +243,10 @@ function onPostToolUse(input) {
   if (!isToolError(input.tool_response)) return
   const s = loadTurns(input.session_id)
   if (s.open) {
+    // 去重：双注册下同一工具失败会被重复触发，300ms 内只记一次
+    const now = Date.now()
+    if (s.open.lastErrAt && now - s.open.lastErrAt < 300) return
+    s.open.lastErrAt = now
     s.open.toolErrors = (s.open.toolErrors || 0) + 1
     saveTurns(input.session_id, s)
     log('tool error: ' + input.tool_name + ' on ' + input.session_id + ' #' + s.open.toolErrors)

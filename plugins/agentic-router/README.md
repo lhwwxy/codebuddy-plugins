@@ -43,6 +43,34 @@ codebuddy plugin install agentic-router@lhwwxy-plugins
 
 安装后用 `/plugin` 可查看与启停；升级用 `codebuddy plugin update agentic-router`（插件更新按 plugin.json 的 version 区分缓存）。
 
+## IDE 聊天集成（CodeBuddy IDE / Craft）
+
+CodeBuddy IDE 的聊天面板不加载插件自带的 hooks（插件 hooks 只在 CLI agent 生效），
+但 IDE 支持 **settings.json 全局 hooks**——两者是独立注册通道。借助这一机制可实现 IDE 集成：
+
+1. 把 `scripts/launcher.sh` 复制到插件数据目录（稳定路径，插件升级不影响）：
+   ```sh
+   cp scripts/launcher.sh ~/.codebuddy/plugins/data/agentic-router-<marketplace>/launcher.sh
+   ```
+2. 在 `~/.codebuddy/settings.json` 顶层加入 hooks 配置（五个事件同一命令）：
+   ```json
+   "hooks": {
+     "UserPromptSubmit": [{ "hooks": [{ "type": "command",
+       "command": "sh /Users/<you>/.codebuddy/plugins/data/agentic-router-<marketplace>/launcher.sh" }] }],
+     "PostToolUse":    [{ "hooks": [{ "type": "command", "command": "…同上…" }] }],
+     "Stop":           [{ "hooks": [{ "type": "command", "command": "…同上…" }] }],
+     "SessionStart":   [{ "hooks": [{ "type": "command", "command": "…同上…" }] }],
+     "SessionEnd":     [{ "hooks": [{ "type": "command", "command": "…同上…" }] }]
+   }
+   ```
+3. 新开一个 IDE 聊天即生效。
+
+要点：
+- **launcher.sh 自动跟随插件升级**（解析 marketplace 缓存最新版本），settings 无需再改
+- **双通道同源**：CLI（插件 hooks）与 IDE（settings hooks）共用同一份飞轮数据
+- **双注册去重**：v0.1.1 起 CLI 会话两条通道同时触发也不会重复计数
+- **文案自适应**：注入的推荐方案按环境区分——CLI 提示分发 router-lite/strong 子代理；IDE 转为档位建议（用户手动切模型）
+
 ## 上架到插件市场
 
 > 实际 marketplace 仓库：**[lhwwxy/codebuddy-plugins](https://github.com/lhwwxy/codebuddy-plugins)**
@@ -116,10 +144,16 @@ CodeBuddy-agentic-router/
 
 ## 设计边界
 
-- 主对话模型不切换：路由发生在子代理分发层（task 工具按调用指定模型），主 agent 保持当前模型
+- 主对话模型不切换：路由发生在子代理分发层（task 工具按调用指定模型），主 agent 保持当前模型；IDE 聊天通道为"推荐 + 用户手动切换"
 - 奖励信号目前覆盖工具失败与延迟；token 成本与人类 👍/👎 反馈待 CodeBuddy 提供对应 hook/接口后接入
 - 模型目录来自配置文件解析（无运行时 API），探测到的是"配置了什么"
-- hook 为独立进程，回合状态经 `turns.json` 跨进程传递（按 session_id 隔离）
+- hook 为独立进程，回合状态按会话分文件跨进程传递（`turns/<会话id>.json`）
+- 无头 `-p` 模式不触发 `UserPromptSubmit`（实测结论），完整链路需交互式会话
+
+## 版本记录
+
+- **v0.1.1**：双注册去重（CLI 会话同时挂插件 hooks 与 settings hooks 不重复计数）；注入文案按 CLI/IDE 环境自适应；决策记录新增 `agent` 字段；新增 `launcher.sh` 稳定启动器（IDE 集成，自动跟随插件升级）
+- **v0.1.0**：首个版本——决策注入 / 工具失败计数 / 回合结算飞轮 / 24h 目录惰性刷新 / 并发安全（唯一 tmp + 按会话分文件）
 
 ## License
 

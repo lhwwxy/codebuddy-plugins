@@ -13,7 +13,7 @@
       "name": "agentic-router",
       "source": "./plugins/agentic-router",
       "description": "学习型智能路由：评估任务类型与复杂度 → 四专家(rule/UCB/LinUCB/k-NN)+EXP3 推荐档位 → 分发 lite/reasoning 子代理执行 → 结果回流数据飞轮，越用越准",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "lhl",
         "url": "https://github.com/lhwwxy"
