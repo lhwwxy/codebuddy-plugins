@@ -1,0 +1,21 @@
+{
+  "name": "agentic-router",
+  "version": "0.1.0",
+  "description": "学习型智能路由：评估任务类型与复杂度 → 四专家（rule/UCB/LinUCB/k-NN）+ EXP3 元选择器推荐档位 → 分解步骤分发 lite/reasoning 子代理执行 → 结果回流飞轮，越用越准",
+  "author": {
+    "name": "lhl",
+    "url": "https://github.com/lhwwxy"
+  },
+  "homepage": "https://github.com/lhwwxy/CodeBuddy-agentic-router",
+  "repository": "https://github.com/lhwwxy/CodeBuddy-agentic-router",
+  "license": "MIT",
+  "keywords": [
+    "routing",
+    "model-routing",
+    "bandit",
+    "exp3",
+    "flywheel",
+    "subagent"
+  ],
+  "defaultEnabled": true
+}
